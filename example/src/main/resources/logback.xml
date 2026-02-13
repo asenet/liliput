@@ -1,0 +1,12 @@
+<configuration>
+
+    <!-- Liliput appender: writes compact JSON to stdout for Loki ingestion -->
+    <appender name="LILIPUT" class="pl.asenet.liliput.LiliputAppender">
+        <registryEndpoint>${REGISTRY_ENDPOINT:-http://localhost:3000/api/plugins/liliput-datasource/resources}</registryEndpoint>
+    </appender>
+
+    <root level="DEBUG">
+        <appender-ref ref="LILIPUT" />
+    </root>
+
+</configuration>

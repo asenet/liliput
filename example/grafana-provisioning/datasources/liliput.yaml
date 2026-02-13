@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: Liliput
+    type: liliput-datasource
+    access: proxy
+    uid: liliput
+    isDefault: true
+    editable: true
+    jsonData:
+      lokiUrl: http://loki:3100
+  - name: Loki (raw)
+    type: loki
+    access: proxy
+    uid: loki-raw
+    editable: true
+    url: http://loki:3100

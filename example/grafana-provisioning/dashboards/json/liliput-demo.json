@@ -1,0 +1,219 @@
+{
+  "uid": "liliput-demo",
+  "title": "Liliput Demo",
+  "tags": ["liliput"],
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "search",
+        "label": "Search",
+        "type": "textbox",
+        "current": { "value": "", "text": "", "selected": false },
+        "options": [{ "value": "", "text": "", "selected": false }],
+        "query": ""
+      },
+      {
+        "name": "severity",
+        "label": "Severity",
+        "type": "custom",
+        "multi": true,
+        "includeAll": true,
+        "allValue": "All",
+        "current": { "value": ["$__all"], "text": ["All"], "selected": true },
+        "options": [
+          { "value": "$__all", "text": "All", "selected": true },
+          { "value": "info", "text": "info", "selected": false },
+          { "value": "warning", "text": "warning", "selected": false },
+          { "value": "error", "text": "error", "selected": false },
+          { "value": "debug", "text": "debug", "selected": false },
+          { "value": "trace", "text": "trace", "selected": false }
+        ],
+        "query": "info,warning,error,debug,trace"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 10,
+      "title": "Compact size (Liliput)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "liliput-datasource", "uid": "liliput" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "color": { "mode": "fixed", "fixedColor": "green" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=\"demo\"}",
+          "queryType": "stats",
+          "datasource": { "type": "liliput-datasource", "uid": "liliput" }
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/compact_bytes/" },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 11,
+      "title": "Full size (without Liliput)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "liliput-datasource", "uid": "liliput" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "color": { "mode": "fixed", "fixedColor": "orange" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=\"demo\"}",
+          "queryType": "stats",
+          "datasource": { "type": "liliput-datasource", "uid": "liliput" }
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/full_bytes/" },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 12,
+      "title": "Savings",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "liliput-datasource", "uid": "liliput" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "fixed", "fixedColor": "blue" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=\"demo\"}",
+          "queryType": "stats",
+          "datasource": { "type": "liliput-datasource", "uid": "liliput" }
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/savings_percent/" },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 13,
+      "title": "Log lines",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "liliput-datasource", "uid": "liliput" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "fixed", "fixedColor": "purple" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=\"demo\"}",
+          "queryType": "stats",
+          "datasource": { "type": "liliput-datasource", "uid": "liliput" }
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/line_count/" },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 1,
+      "title": "Raw logs (compact payloads in Loki)",
+      "type": "logs",
+      "pluginVersion": "10.4.0",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 5 },
+      "datasource": { "type": "loki", "uid": "loki-raw" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=\"demo\"}",
+          "datasource": { "type": "loki", "uid": "loki-raw" }
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": false,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Rehydrated logs (decoded by Liliput)",
+      "type": "logs",
+      "pluginVersion": "10.4.0",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 15 },
+      "datasource": { "type": "liliput-datasource", "uid": "liliput" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=\"demo\"}",
+          "search": "$search",
+          "severity": "$severity",
+          "datasource": { "type": "liliput-datasource", "uid": "liliput" }
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "sortOrder": "Descending",
+        "dedupStrategy": "none"
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

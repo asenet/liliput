@@ -1,0 +1,19 @@
+{
+  "type": "datasource",
+  "name": "Liliput",
+  "id": "liliput-datasource",
+  "backend": true,
+  "executable": "gpx_liliput-datasource",
+  "info": {
+    "description": "Liliput template-based log viewer",
+    "author": {
+      "name": "liliput"
+    },
+    "version": "1.0.0",
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    }
+  },
+  "logs": true
+}
