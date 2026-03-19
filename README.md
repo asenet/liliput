@@ -28,7 +28,7 @@ Templates (`User {} has logged in`, `Order {} processed`) are registered once wi
 ## Architecture
 
 ```
-┌──────────────┐     compact logs      ┌──────┐
+┌──────────────┐     compact logs       ┌──────┐
 │  Java App    │ ───────────────────>   │ Loki │
 │  + Liliput   │    I[1,"alice"]        └──┬───┘
 │  Appender    │                           │
@@ -100,47 +100,20 @@ All available properties:
 ```xml
 <appender name="LILIPUT" class="pl.asenet.liliput.LiliputAppender">
     <registryEndpoint>http://localhost:3000/api/plugins/liliput-datasource/resources</registryEndpoint>
-    <resyncIntervalSeconds>30</resyncIntervalSeconds>
     <connectTimeoutSeconds>5</connectTimeoutSeconds>
     <registrationEnabled>true</registrationEnabled>
     <levels>INFO,WARN,ERROR</levels>
+    <circuitBreakerThreshold>3</circuitBreakerThreshold>
 </appender>
 ```
 
 | Property | Default | Description |
 |----------|---------|-------------|
 | `registryEndpoint` | `http://localhost:3000/api/plugins/liliput-datasource/resources` | Grafana plugin endpoint for template registration |
-| `resyncIntervalSeconds` | `30` | How often to re-register all templates (handles Grafana restarts). Set to `0` to disable. |
 | `connectTimeoutSeconds` | `5` | HTTP connect timeout for registration requests |
 | `registrationEnabled` | `true` | Set to `false` to output compact logs without registering templates (useful for testing) |
-| `levels` | _(empty = all)_ | Comma-separated list of levels to compress. Unmatched levels pass through as plain text. See examples below. |
-
-**`levels` examples:**
-
-```xml
-<!-- Compress all levels (default) -->
-<levels></levels>
-<!-- INFO User alice has logged in  →  I[1,"alice"]   -->
-<!-- WARN Error in module payments  →  W[2,"payments"] -->
-<!-- DEBUG Connection pool stats    →  D[3]            -->
-
-<!-- Compress only INFO — high-volume logs that benefit most from compression -->
-<levels>INFO</levels>
-<!-- INFO User alice has logged in  →  I[1,"alice"]              (compressed) -->
-<!-- WARN Error in module payments  →  Error in module payments  (plain text) -->
-<!-- DEBUG Connection pool stats    →  Connection pool stats     (plain text) -->
-
-<!-- Compress INFO and WARN, keep ERROR and DEBUG readable -->
-<levels>INFO,WARN</levels>
-<!-- INFO User alice has logged in  →  I[1,"alice"]              (compressed) -->
-<!-- WARN Error in module payments  →  W[2,"payments"]           (compressed) -->
-<!-- ERROR Fatal: disk full         →  Fatal: disk full          (plain text) -->
-
-<!-- Compress everything except DEBUG — keep debug logs human-readable for development -->
-<levels>INFO,WARN,ERROR,TRACE</levels>
-<!-- DEBUG Connection pool stats    →  Connection pool stats     (plain text) -->
-<!-- everything else                →  compressed                             -->
-```
+| `levels` | _(empty = all)_ | Comma-separated list of levels to compress. Unmatched levels pass through as plain text. |
+| `circuitBreakerThreshold` | `3` | Number of consecutive HTTP failures before switching to fallback mode |
 
 Properties can use environment variables and defaults:
 
@@ -154,11 +127,9 @@ Spring Boot users can bridge from `application.yml` using `logback-spring.xml`:
 <configuration>
     <springProperty name="endpoint" source="liliput.registry-endpoint"
                     defaultValue="http://localhost:3000/api/plugins/liliput-datasource/resources"/>
-    <springProperty name="resync" source="liliput.resync-interval-seconds" defaultValue="30"/>
 
     <appender name="LILIPUT" class="pl.asenet.liliput.LiliputAppender">
         <registryEndpoint>${endpoint}</registryEndpoint>
-        <resyncIntervalSeconds>${resync}</resyncIntervalSeconds>
     </appender>
 
     <root level="DEBUG">
@@ -171,7 +142,6 @@ Spring Boot users can bridge from `application.yml` using `logback-spring.xml`:
 # application.yml
 liliput:
   registry-endpoint: http://grafana:3000/api/plugins/liliput-datasource/resources
-  resync-interval-seconds: 60
 ```
 
 ### 3. Log normally with SLF4J
@@ -191,7 +161,7 @@ No code changes needed. The appender intercepts parameterized messages, extracts
 Each log line is encoded as:
 
 ```
-<level_char>[<template_id>, <param1>, <param2>, ...]
+<level_char>[<template_id>, <param1>, <param2>, ..., <mdc_map>?, <stack_trace>?]
 ```
 
 | Level char | Severity |
@@ -202,7 +172,144 @@ Each log line is encoded as:
 | `W` | warning |
 | `E` | error |
 
-Example: `W[3,"payments"]` = WARNING, template #3, param "payments"
+Examples:
+
+```
+I[1,"alice"]                                                   # simple message
+I[3,"alice","purchase",4821]                                   # multiple params
+W[2,"payments"]                                                # warning level
+I[1,"alice",{"traceId":"abc-123","userId":"alice"}]            # with MDC context
+E[5,"alice",{"traceId":"abc-123"},"java.lang.RuntimeExcep..."] # MDC + exception
+E[5,"alice","java.lang.RuntimeException: Something broke\n..."] # exception only
+```
+
+## Reliability features
+
+### Circuit breaker / fallback mode
+
+If the Grafana plugin endpoint becomes unreachable (e.g. Grafana restart, network issue), the appender automatically switches to writing full, standard-format log lines to **prevent data loss**:
+
+```
+WARN Error in module payments MDC={traceId=abc-123}
+ERROR Processing failed for user alice
+java.lang.RuntimeException: Connection refused
+    at com.example.Service.process(Service.java:42)
+```
+
+The circuit breaker opens after a configurable number of consecutive HTTP failures (default: 3). It closes automatically when a subsequent template registration succeeds.
+
+### Efficient template registration
+
+Templates are registered with the Grafana plugin via async HTTP POST only when a **new** template is first seen. A local cache tracks which template IDs have been successfully acknowledged by the server (HTTP 2xx response). Templates already in this cache are never re-registered, eliminating redundant network calls. This replaces the previous periodic resync approach.
+
+### MDC support
+
+If the SLF4J MDC (Mapped Diagnostic Context) contains data at log time, the MDC map is included in the compact payload as a JSON object after the template parameters:
+
+```java
+MDC.put("traceId", "abc-123");
+MDC.put("userId", "alice");
+log.info("User {} has logged in", "alice");
+// Output: I[1,"alice",{"traceId":"abc-123","userId":"alice"}]
+```
+
+When the MDC is empty, it is omitted from the payload. In fallback mode, MDC is rendered as `MDC={traceId=abc-123, userId=alice}`.
+
+### Exception handling
+
+If a log event contains a `Throwable`, the full stack trace is appended as a raw string at the end of the compact array:
+
+```java
+try {
+    // ...
+} catch (Exception e) {
+    log.error("Processing failed for user {}", "alice", e);
+}
+// Output: E[5,"alice","java.lang.RuntimeException: Something broke\n\tat ..."]
+```
+
+Stack traces cannot be templated, so they are always included verbatim. MDC and exceptions can appear together in the same payload.
+
+### Level filtering
+
+The `levels` property accepts a comma-separated list of log levels to compress. Levels not in the list pass through as plain formatted text. When empty (default), all levels are compressed.
+
+```xml
+<!-- Compress all levels (default) -->
+<levels></levels>
+<!-- INFO User alice has logged in  →  I[1,"alice"]   -->
+<!-- WARN Error in module payments  →  W[2,"payments"] -->
+
+<!-- Compress only INFO — high-volume logs that benefit most from compression -->
+<levels>INFO</levels>
+<!-- INFO User alice has logged in  →  I[1,"alice"]              (compressed) -->
+<!-- WARN Error in module payments  →  Error in module payments  (plain text) -->
+
+<!-- Compress INFO and WARN, keep ERROR and DEBUG readable -->
+<levels>INFO,WARN</levels>
+```
+
+## Grafana plugin
+
+### Backend (Go)
+
+#### Persistent template store
+
+Template mappings are persisted to a JSON file on disk so they survive plugin restarts and Grafana upgrades. The registry is loaded from disk on plugin startup and saved after each new template registration.
+
+Storage path resolution (in order):
+1. `LILIPUT_REGISTRY_PATH` environment variable
+2. `~/.config/liliput/templates.json` (or platform equivalent via `os.UserConfigDir()`)
+3. Falls back to temp directory if config dir is unavailable
+
+#### Rehydration
+
+When Grafana queries for logs, the plugin:
+1. Fetches compact log lines from Loki via `query_range`
+2. Parses each line's level prefix and JSON array
+3. Looks up the template ID in the registry
+4. Replaces `{}` placeholders with the stored parameters
+5. Separates MDC objects and stack traces from template parameters, appending them as extra context
+
+If a template ID is not found (e.g. registry was cleared, new app instance), the plugin returns a placeholder instead of failing:
+
+```
+[UNKNOWN TEMPLATE #42] alice orders
+```
+
+This ensures logs are never silently dropped, even when template mappings are incomplete.
+
+#### Server-side search and filtering
+
+Since Loki stores compact log lines, standard LogQL regex searches won't match full-text content like `"alice logged in"`. The plugin solves this by performing search filtering **server-side** in Go:
+
+1. Fetch raw compact lines from Loki
+2. Rehydrate each line into full text
+3. Apply the search filter on the rehydrated body (case-insensitive)
+4. Apply severity filter
+5. Return only matching results to the Grafana frontend
+
+This saves browser memory and CPU by filtering on the backend before results reach the UI.
+
+#### Compression stats
+
+The plugin supports a `stats` query type that calculates compression savings by comparing compact payload sizes against rehydrated full-text sizes, returning `compact_bytes`, `full_bytes`, `savings_percent`, and `line_count`.
+
+#### API endpoints
+
+| Method | Path          | Description                        |
+|--------|---------------|------------------------------------|
+| POST   | `/register`   | Register a template (from liliput4j) |
+| GET    | `/templates`  | List all registered templates (JSON) |
+
+### Frontend (TypeScript)
+
+The query editor provides two input fields:
+
+- **LogQL**: The Loki stream selector (e.g. `{compose_service="demo"}`)
+- **Search**: Full-text search applied server-side after rehydration
+
+Both fields support Grafana template variables. The datasource configuration has a single **Loki URL** field (default: `http://loki:3100`).
 
 ## Searching compact logs
 
@@ -224,10 +331,6 @@ These work directly on the compact payloads stored in Loki:
 # Filter by parameter value
 {compose_service="myapp"} |= "\"alice\""
 ```
-
-## Grafana plugin settings
-
-In the datasource configuration, set **Loki URL** to point to your Loki instance (default: `http://loki:3100`).
 
 ## Project structure
 
@@ -252,6 +355,7 @@ liliput/
 │   └── src/
 │       ├── plugin.json
 │       ├── QueryEditor.tsx
+│       ├── ConfigEditor.tsx
 │       ├── datasource.ts
 │       └── types.ts
 ├── example/                         # Demo (docker compose)
@@ -268,7 +372,62 @@ liliput/
 └── README.md
 ```
 
+## Running tests
+
+### Java (liliput4j)
+
+```bash
+./gradlew :liliput4j:test
+```
+
+Covers:
+- Compact JSON output format and template ID consistency
+- Template registration via HTTP and deduplication
+- Level filtering (compress only specified levels, pass others as plain text)
+- Circuit breaker: opens after consecutive failures, falls back to raw logs
+- Circuit breaker: recovers automatically when endpoint becomes reachable
+- Efficient registration: cached template IDs are not re-registered
+- MDC: included in compact payload when present, omitted when empty
+- MDC: included in fallback output
+- Exceptions: stack trace appended to compact payload
+- Exceptions: combined with MDC in same payload
+- Exceptions: included in fallback output
+
+### Go (Grafana plugin)
+
+```bash
+cd liliput-grafana-plugin && go test ./pkg/plugin/ -v
+```
+
+Covers:
+- `Rehydrate()` with single, multiple, and no placeholders
+- `RehydrateLine()` end-to-end compact string rehydration (e.g. `I[1,"alice"]` -> `User alice has logged in`)
+- Unknown template returns `[UNKNOWN TEMPLATE #id]` placeholder
+- MDC objects handled correctly in compact lines
+- All level prefix mappings (I/W/E/D/T)
+- Non-compact and short lines pass through unchanged
+- Persistent store: save to file, clear, reload, verify templates restored
+- Missing registry file does not cause errors
+- Server-side search: rehydrate then filter, case-insensitive, empty search matches all
+
 ## Requirements
 
 - Docker and Docker Compose
 - Docker Loki logging driver (`docker plugin install grafana/loki-docker-driver:latest --alias loki --grant-all-permissions`)
+
+### For local development
+
+- Java 21+ and Gradle 8.4+ (for liliput4j)
+- Go 1.21+ (for the Grafana plugin backend)
+- Node.js 18+ (for the Grafana plugin frontend)
+
+## Tech stack
+
+| Component | Technology |
+|-----------|-----------|
+| Java Library | Java 21, Logback 1.5, Gson 2.11, JUnit 5 |
+| Grafana Plugin (backend) | Go 1.21, Grafana Plugin SDK |
+| Grafana Plugin (frontend) | TypeScript 5, React 18, Grafana Data/Runtime 10 |
+| Log Storage | Grafana Loki 2.9 |
+| Visualization | Grafana 10.4 |
+| Build | Gradle 8.4, Webpack 5, Docker multi-stage |

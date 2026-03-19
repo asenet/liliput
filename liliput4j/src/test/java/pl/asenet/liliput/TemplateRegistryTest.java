@@ -22,29 +22,36 @@ class TemplateRegistryTest {
     }
 
     @Test
-    void firstRegistrationReturnsId1() {
-        long id = registry.getOrRegister("User {} logged in");
-        assertEquals(1, id);
+    void getCachedId_returnsNullForUnknownTemplate() {
+        assertNull(registry.getCachedId("User {} logged in"));
     }
 
     @Test
-    void sameTemplateReturnsSameId() {
-        long id1 = registry.getOrRegister("User {} logged in");
-        long id2 = registry.getOrRegister("User {} logged in");
-        assertEquals(id1, id2);
+    void cache_storesServerAssignedId() {
+        registry.cache("User {} logged in", 42);
+        assertEquals(42, registry.getCachedId("User {} logged in"));
     }
 
     @Test
-    void differentTemplatesGetDifferentIds() {
-        long id1 = registry.getOrRegister("User {} logged in");
-        long id2 = registry.getOrRegister("Order {} processed");
-        assertNotEquals(id1, id2);
+    void cache_reverseLookupWorks() {
+        registry.cache("User {} logged in", 42);
+        assertEquals("User {} logged in", registry.getTemplate(42));
     }
 
     @Test
-    void reverseLookupreturnsCorrectTemplate() {
-        registry.getOrRegister("User {} logged in");
-        assertEquals("User {} logged in", registry.getTemplate(1));
+    void cache_sameTemplateOverwritesId() {
+        registry.cache("User {} logged in", 1);
+        registry.cache("User {} logged in", 42);
+        assertEquals(42, registry.getCachedId("User {} logged in"));
+    }
+
+    @Test
+    void differentTemplatesGetDifferentCachedIds() {
+        registry.cache("User {} logged in", 1);
+        registry.cache("Order {} processed", 2);
+
+        assertEquals(1, registry.getCachedId("User {} logged in"));
+        assertEquals(2, registry.getCachedId("Order {} processed"));
     }
 
     @Test
@@ -53,44 +60,36 @@ class TemplateRegistryTest {
     }
 
     @Test
-    void isNewReturnsTrueForUnseenTemplate() {
-        assertTrue(registry.isNew("User {} logged in"));
-    }
-
-    @Test
-    void isNewReturnsFalseAfterRegistration() {
-        registry.getOrRegister("User {} logged in");
-        assertFalse(registry.isNew("User {} logged in"));
-    }
-
-    @Test
-    void sizeReflectsRegistrations() {
+    void sizeReflectsCachedEntries() {
         assertEquals(0, registry.size());
-        registry.getOrRegister("A");
-        registry.getOrRegister("B");
-        registry.getOrRegister("A");
+        registry.cache("A", 1);
+        registry.cache("B", 2);
+        registry.cache("A", 1); // duplicate — no size change
         assertEquals(2, registry.size());
     }
 
     @Test
     void clearResetsState() {
-        registry.getOrRegister("A");
+        registry.cache("A", 1);
         registry.clear();
         assertEquals(0, registry.size());
-        assertTrue(registry.isNew("A"));
+        assertNull(registry.getCachedId("A"));
+        assertNull(registry.getTemplate(1));
     }
 
     @Test
-    void concurrentRegistrationOfSameTemplateAssignsOneId() throws InterruptedException {
+    void concurrentCacheAccessIsSafe() throws InterruptedException {
         int threadCount = 50;
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         CountDownLatch latch = new CountDownLatch(threadCount);
         Set<Long> ids = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
         for (int i = 0; i < threadCount; i++) {
+            final long id = 42;
             executor.submit(() -> {
                 try {
-                    ids.add(registry.getOrRegister("User {} logged in"));
+                    registry.cache("User {} logged in", id);
+                    ids.add(registry.getCachedId("User {} logged in"));
                 } finally {
                     latch.countDown();
                 }
@@ -100,7 +99,7 @@ class TemplateRegistryTest {
         latch.await();
         executor.shutdown();
 
-        assertEquals(1, ids.size(), "All threads should get the same ID");
-        assertEquals(1, registry.size());
+        assertEquals(1, ids.size(), "All threads should see the same cached ID");
+        assertEquals(42L, ids.iterator().next());
     }
 }

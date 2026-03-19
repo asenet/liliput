@@ -5,7 +5,7 @@
   "timezone": "browser",
   "refresh": "5s",
   "time": {
-    "from": "now-15m",
+    "from": "now-1h",
     "to": "now"
   },
   "templating": {
@@ -43,7 +43,7 @@
       "id": 10,
       "title": "Compact size (Liliput)",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 0 },
       "datasource": { "type": "liliput-datasource", "uid": "liliput" },
       "fieldConfig": {
         "defaults": {
@@ -73,7 +73,7 @@
       "id": 11,
       "title": "Full size (without Liliput)",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 0 },
       "datasource": { "type": "liliput-datasource", "uid": "liliput" },
       "fieldConfig": {
         "defaults": {
@@ -103,7 +103,7 @@
       "id": 12,
       "title": "Savings",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 0 },
       "datasource": { "type": "liliput-datasource", "uid": "liliput" },
       "fieldConfig": {
         "defaults": {
@@ -130,15 +130,15 @@
       }
     },
     {
-      "id": 13,
-      "title": "Log lines",
+      "id": 14,
+      "title": "Bytes saved",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
       "datasource": { "type": "liliput-datasource", "uid": "liliput" },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "color": { "mode": "fixed", "fixedColor": "purple" }
+          "unit": "decbytes",
+          "color": { "mode": "fixed", "fixedColor": "light-green" }
         },
         "overrides": []
       },
@@ -151,7 +151,7 @@
         }
       ],
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/line_count/" },
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/saved_bytes/" },
         "textMode": "auto",
         "colorMode": "value",
         "graphMode": "none",
@@ -160,11 +160,338 @@
       }
     },
     {
+      "id": 30,
+      "title": "Monthly Cost Savings by Provider (projected from current window)",
+      "description": "Projected monthly cost savings based on current log volume. Prices are approximate public ingestion rates (USD/GB).",
+      "type": "bargauge",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "liliput-datasource", "uid": "liliput" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "color": { "mode": "continuous-GrYlRd" },
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "value": null, "color": "green" },
+              { "value": 50, "color": "yellow" },
+              { "value": 200, "color": "red" }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "cost_saved_aws_cloudwatch" },
+            "properties": [{ "id": "displayName", "value": "AWS CloudWatch ($0.50/GB)" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "cost_saved_datadog" },
+            "properties": [{ "id": "displayName", "value": "Datadog ($0.10/GB)" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "cost_saved_grafana_cloud" },
+            "properties": [{ "id": "displayName", "value": "Grafana Cloud ($0.50/GB)" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "cost_saved_elastic_cloud" },
+            "properties": [{ "id": "displayName", "value": "Elastic Cloud ($0.95/GB)" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "cost_saved_newrelic" },
+            "properties": [{ "id": "displayName", "value": "New Relic ($0.35/GB)" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "cost_saved_splunk_cloud" },
+            "properties": [{ "id": "displayName", "value": "Splunk Cloud ($2.00/GB)" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "cost_saved_gcp_logging" },
+            "properties": [{ "id": "displayName", "value": "GCP Logging ($0.50/GB)" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "cost_saved_azure_monitor" },
+            "properties": [{ "id": "displayName", "value": "Azure Monitor ($2.76/GB)" }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=\"demo\"}",
+          "queryType": "stats",
+          "datasource": { "type": "liliput-datasource", "uid": "liliput" }
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "/cost_saved_/"
+        },
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "minVizWidth": 8,
+        "minVizHeight": 10,
+        "textMode": "value_and_name"
+      }
+    },
+    {
+      "id": 31,
+      "title": "Monthly Cost: Without vs With Liliput",
+      "description": "Side-by-side monthly cost comparison per provider. 'Without' = full log volume, 'With' = compressed volume.",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "liliput-datasource", "uid": "liliput" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Provider" },
+            "properties": [
+              { "id": "unit", "value": "string" },
+              { "id": "custom.width", "value": 180 }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Without Liliput" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "With Liliput" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Saved/mo" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "blue" } },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Price/GB" },
+            "properties": [
+              { "id": "custom.width", "value": 90 }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=\"demo\"}",
+          "queryType": "costs",
+          "datasource": { "type": "liliput-datasource", "uid": "liliput" }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": { "show": false }
+      }
+    },
+    {
+      "id": 32,
+      "title": "Monthly volume without Liliput",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 13 },
+      "datasource": { "type": "liliput-datasource", "uid": "liliput" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "decimals": 2,
+          "color": { "mode": "fixed", "fixedColor": "orange" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=\"demo\"}",
+          "queryType": "stats",
+          "datasource": { "type": "liliput-datasource", "uid": "liliput" }
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/monthly_full_bytes/" },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 33,
+      "title": "Monthly savings (projected)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 13 },
+      "datasource": { "type": "liliput-datasource", "uid": "liliput" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "decimals": 2,
+          "color": { "mode": "fixed", "fixedColor": "green" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=\"demo\"}",
+          "queryType": "stats",
+          "datasource": { "type": "liliput-datasource", "uid": "liliput" }
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/monthly_saved_bytes/" },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 34,
+      "title": "AWS CloudWatch saved/mo",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 13 },
+      "datasource": { "type": "liliput-datasource", "uid": "liliput" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "color": { "mode": "fixed", "fixedColor": "yellow" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=\"demo\"}",
+          "queryType": "stats",
+          "datasource": { "type": "liliput-datasource", "uid": "liliput" }
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/cost_saved_aws_cloudwatch/" },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 35,
+      "title": "Datadog saved/mo",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 13 },
+      "datasource": { "type": "liliput-datasource", "uid": "liliput" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "color": { "mode": "fixed", "fixedColor": "dark-purple" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=\"demo\"}",
+          "queryType": "stats",
+          "datasource": { "type": "liliput-datasource", "uid": "liliput" }
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/cost_saved_datadog/" },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 36,
+      "title": "Splunk Cloud saved/mo",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 13 },
+      "datasource": { "type": "liliput-datasource", "uid": "liliput" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "color": { "mode": "fixed", "fixedColor": "semi-dark-green" }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{compose_service=\"demo\"}",
+          "queryType": "stats",
+          "datasource": { "type": "liliput-datasource", "uid": "liliput" }
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/cost_saved_splunk_cloud/" },
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 20,
+      "title": "Template Registry",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 17 },
+      "datasource": { "type": "liliput-datasource", "uid": "liliput" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "ID" },
+            "properties": [{ "id": "custom.width", "value": 80 }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Params" },
+            "properties": [{ "id": "custom.width", "value": 80 }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "templates",
+          "datasource": { "type": "liliput-datasource", "uid": "liliput" }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": { "show": true, "reducer": ["count"], "countRows": true }
+      }
+    },
+    {
       "id": 1,
       "title": "Raw logs (compact payloads in Loki)",
       "type": "logs",
       "pluginVersion": "10.4.0",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 5 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 25 },
       "datasource": { "type": "loki", "uid": "loki-raw" },
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "targets": [
@@ -190,7 +517,7 @@
       "title": "Rehydrated logs (decoded by Liliput)",
       "type": "logs",
       "pluginVersion": "10.4.0",
-      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 15 },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 35 },
       "datasource": { "type": "liliput-datasource", "uid": "liliput" },
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "targets": [
